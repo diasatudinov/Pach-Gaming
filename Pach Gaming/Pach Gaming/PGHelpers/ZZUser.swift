@@ -1,3 +1,10 @@
+//
+//  ZZUser.swift
+//  Pach Gaming
+//
+//
+
+
 import SwiftUI
 
 class ZZUser: ObservableObject {

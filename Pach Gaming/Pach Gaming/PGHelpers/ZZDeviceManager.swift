@@ -1,3 +1,10 @@
+//
+//  ZZDeviceManager.swift
+//  Pach Gaming
+//
+//
+
+
 import UIKit
 
 class ZZDeviceManager {

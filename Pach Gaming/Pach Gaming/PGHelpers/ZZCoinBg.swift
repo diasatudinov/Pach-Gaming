@@ -1,3 +1,10 @@
+//
+//  ZZCoinBg.swift
+//  Pach Gaming
+//
+//
+
+
 import SwiftUI
 
 struct ZZCoinBg: View {
@@ -5,7 +12,7 @@ struct ZZCoinBg: View {
     var height: CGFloat = ZZDeviceManager.shared.deviceType == .pad ? 80:60
     var body: some View {
         ZStack {
-            Image(.coinsBgPD)
+            Image("coinsBgPD")
                 .resizable()
                 .scaledToFit()
             

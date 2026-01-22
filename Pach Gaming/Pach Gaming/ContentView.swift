@@ -2,7 +2,6 @@
 //  ContentView.swift
 //  Pach Gaming
 //
-//  Created by Dias Atudinov on 22.01.2026.
 //
 
 import SwiftUI
