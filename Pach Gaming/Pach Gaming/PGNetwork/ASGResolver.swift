@@ -1,3 +1,10 @@
+//
+//  ASGResolver.swift
+//  Pach Gaming
+//
+//
+
+
 import Foundation
 
 class ASGResolver: NSObject, URLSessionTaskDelegate {

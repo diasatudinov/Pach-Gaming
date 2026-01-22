@@ -1,3 +1,10 @@
+//
+//  ASGRoot.swift
+//  Pach Gaming
+//
+//
+
+
 import SwiftUI
 
 struct ASGRoot: View {
@@ -13,9 +20,9 @@ struct ASGRoot: View {
             } else {
                 VStack {
                     if isLoading {
-                        PDLoaderView()
+                        PGLoaderView()
                     } else {
-                        PDMenuView()
+                        PGMenuView()
                             .onAppear {
                                 AppDelegate.orientationLock = .portrait
                                 setOrientation(.portrait)

@@ -1,3 +1,10 @@
+//
+//  ASGLinks.swift
+//  Pach Gaming
+//
+//
+
+
 import SwiftUI
 
 class ASGLinks {
