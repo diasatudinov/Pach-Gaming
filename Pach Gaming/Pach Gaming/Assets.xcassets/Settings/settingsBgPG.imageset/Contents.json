@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "settingsBgPG.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "images" : [
+    {
+      "filename" : "parachutist2_freefall.png",
+      "idiom" : "universal"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}
