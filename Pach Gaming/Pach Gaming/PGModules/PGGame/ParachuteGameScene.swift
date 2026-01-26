@@ -1,240 +1,388 @@
+//
+//  ParachuteGameScene.swift
+//  Pach Gaming
+//
+//
+
+
 import SpriteKit
+import SwiftUI
 
-final class ParachuteGameScene: SKScene {
+final class ReactionLandingScene: SKScene, SKPhysicsContactDelegate {
+    // MARK: - Public HUD bindings
+    private(set) var landedCount: Int = 0
+    let targetCount: Int = 5
+    private(set) var stateText: String? = "Тап: раскрыть парашют • Свайп: толчок"
 
-    enum SceneEvent {
-        case hud(String)
-        case win
-        case lose
+    // MARK: - Gameplay nodes
+    private var boat: SKSpriteNode!
+    private var water: SKNode!
+    private var shark: SKSpriteNode?
+
+    private var waterHitNode: SKSpriteNode!
+    private var waterDecor: SKSpriteNode!
+    private var debugShowWaterHitbox = false
+    
+    private var currentParachutist: ParachutistNode?
+
+    // Touch handling (свайп)
+    private var touchStartPoint: CGPoint?
+    private var touchStartTime: TimeInterval?
+
+    // Game state
+    private var isLevelActive = true
+
+    // MARK: - Physics categories
+    private struct Category {
+        static let none: UInt32 = 0
+        static let parachutist: UInt32 = 1 << 0
+        static let boat: UInt32       = 1 << 1
+        static let water: UInt32      = 1 << 2
     }
 
-    var onEvent: ((SceneEvent) -> Void)?
+    // MARK: - Tuning constants
+    private let freeFallGravity: CGFloat = -4.5
+    private let chuteGravity: CGFloat = -1.2
 
-    // MARK: - Настройки геймплея
-    private let waterHeight: CGFloat = 120          // высота "воды" снизу
-    private let boatSize = CGSize(width: 140, height: 50)
+    private let maxDownSpeedFree: CGFloat = 260     // терминалка в свободном падении
+    private let maxDownSpeedChute: CGFloat = 120
+    private let fallSpeedFree: CGFloat = 260
+    private let fallSpeedChute: CGFloat = 120
+    
+    private let swipeImpulse: CGFloat = 40.0
+    private let swipeThreshold: CGFloat = 35.0
 
-    private let freefallSpeed: CGFloat = 360        // px/sec без парашюта (быстро)
-    private let descentSpeed: CGFloat = 110         // px/sec с парашютом (медленно)
+    private let boatSpeed: CGFloat = 180.0 // px/sec
+    private var boatDirection: CGFloat = 1.0
 
-    private let impulseStrength: CGFloat = 160      // px/sec добавка к vx от свайпа
-    private let maxHorizontalSpeed: CGFloat = 240   // ограничение vx
-    private let horizontalDampingPerSecond: CGFloat = 1.8 // "трение" vx
+    // “ветер” — лёгкий постоянный дрейф
+    private let windStrength: CGFloat = 6.0
 
-    private let windStrength: CGFloat = 55          // px/sec^2 (ускорение)
-    private let windFrequency: CGFloat = 0.7        // частота "синуса" ветра
+    var onResultChanged: ((GameResult) -> Void)?
 
-    // MARK: - Состояние уровня
-    private var levelIndex: Int = 1
-    private var totalParachutists: Int = 0
-    private var landedCount: Int = 0
-    private var isLevelActive: Bool = false
-
-    // MARK: - Ноды
-    private var waterNode: SKShapeNode!
-    private var boatNode: SKShapeNode!
-    private var parachutists: [ParachutistNode] = []
-
-    // таймер для ветра
-    private var t: TimeInterval = 0
-
-    // MARK: - Lifecycle
+    private func setResult(_ r: GameResult) {
+        onResultChanged?(r)
+    }
+    
+    // MARK: - Scene lifecycle
     override func didMove(to view: SKView) {
-        backgroundColor = SKColor(red: 0.55, green: 0.78, blue: 0.95, alpha: 1.0)
-        setupStaticWorld()
-    }
+        view.allowsTransparency = true
+        backgroundColor = .clear
 
-    override func didChangeSize(_ oldSize: CGSize) {
-        super.didChangeSize(oldSize)
-        layoutStaticWorld()
-    }
+        physicsWorld.contactDelegate = self
+        physicsWorld.gravity = CGVector(dx: 0, dy: freeFallGravity)
 
-    // MARK: - Public API
-    func startLevel(level: Int) {
-        levelIndex = level
-        resetLevel()
-        spawnLevel()
+        removeAllChildren()
+        createWorld()
+        restart()
+    }
+    
+    
+
+    func restart() {
         isLevelActive = true
-        emitHUD()
+        setResult(.playing)
+        stateText = "Тап: раскрыть парашют • Свайп: толчок"
+
+        landedCount = 0
+        currentParachutist?.removeFromParent()
+        currentParachutist = nil
+
+        shark?.removeFromParent()
+        shark = nil
+
+        spawnNextParachutist()
     }
 
-    func applySwipe(deltaX: CGFloat) {
-        guard isLevelActive else { return }
-        let dir: CGFloat = deltaX >= 0 ? 1 : -1
-        // Короткий импульс всем раскрытым в воздухе
-        for p in parachutists where p.state == .parachute && !p.hasLanded {
-            p.vx = clamp(p.vx + dir * impulseStrength, -maxHorizontalSpeed, maxHorizontalSpeed)
+    private func applyFixedVerticalSpeed() {
+        guard let p = currentParachutist, let body = p.physicsBody else { return }
+        let dy = -(p.isChuteDeployed ? fallSpeedChute : fallSpeedFree)
+        body.velocity = CGVector(dx: body.velocity.dx, dy: dy)
+    }
+    
+    // MARK: - World
+    private func createWorld() {
+        // 1) ДЕКОРАТИВНАЯ ВОДА (картинка, без физики)
+        let decorHeight: CGFloat = max(150, size.height * 0.22)
+        let decorY: CGFloat = max(20, size.height * 0.06) // чуть выше низа
+
+        if let _ = UIImage(named: "water_bg") {
+            waterDecor = SKSpriteNode(imageNamed: "water_bg")
+            waterDecor.size = CGSize(width: size.width, height: decorHeight)
+        } else {
+            // fallback
+            waterDecor = SKSpriteNode(color: SKColor(red: 0.08, green: 0.45, blue: 0.75, alpha: 0.65),
+                                      size: CGSize(width: size.width, height: decorHeight))
         }
+
+        waterDecor.anchorPoint = CGPoint(x: 0.5, y: 0.0) // низ спрайта у Y
+        waterDecor.position = CGPoint(x: size.width * 0.5, y: decorY)
+        waterDecor.zPosition = 0
+        addChild(waterDecor)
+
+        // 2) “СМЕРТЕЛЬНАЯ” ВОДА (хитбокс) — тонкая полоска в зоне воды
+        // ВАЖНО: хитбокс лучше сделать чуть НИЖЕ верхней кромки декора,
+        // чтобы визуально игрок видел воду, но “смерть” происходила при касании воды.
+        let hitHeight: CGFloat = 24
+        let hitY = decorY + 8  // подними/опусти: чем выше — тем раньше проигрыш
+
+        if let _ = UIImage(named: "water_hit") {
+            waterHitNode = SKSpriteNode(imageNamed: "water_hit")
+            waterHitNode.size = CGSize(width: size.width, height: decorHeight)
+        } else {
+            // fallback
+            waterHitNode = SKSpriteNode(color: SKColor(red: 0.08, green: 0.45, blue: 0.75, alpha: 0.65),
+                                      size: CGSize(width: size.width, height: decorHeight))
+        }
+        waterHitNode.position = CGPoint(x: size.width * 0.5, y: hitY)
+        waterHitNode.zPosition = 1
+        addChild(waterHitNode)
+
+        let hitSize = CGSize(width: size.width, height: hitHeight)
+
+        if debugShowWaterHitbox {
+            let hitVis = SKShapeNode(rectOf: hitSize)
+            hitVis.fillColor = .red.withAlphaComponent(0.25)
+            hitVis.strokeColor = .red.withAlphaComponent(0.6)
+            hitVis.zPosition = 10
+            waterHitNode.addChild(hitVis)
+        }
+
+        waterHitNode.physicsBody = SKPhysicsBody(rectangleOf: hitSize)
+        waterHitNode.physicsBody?.isDynamic = false
+        waterHitNode.physicsBody?.categoryBitMask = Category.water
+        waterHitNode.physicsBody?.contactTestBitMask = Category.parachutist
+        waterHitNode.physicsBody?.collisionBitMask = Category.none
+
+        // 3) ЛОДКА
+        boat = makeBoatNode()
+        boat.zPosition = 3
+        addChild(boat)
     }
 
-    // MARK: - Touches (тап по парашютисту)
+    private func makeBoatNode() -> SKSpriteNode {
+        let boatSize = CGSize(width: 99, height: 77)
+        let y = waterHitNode.position.y + waterHitNode.bounds.size.height * 0.25
+
+        let node: SKSpriteNode
+        if let _ = UIImage(named: "boat") {
+            node = SKSpriteNode(imageNamed: "boat")
+            node.size = boatSize
+        } else {
+            // fallback
+            node = SKSpriteNode(color: .brown, size: boatSize)
+        }
+
+        node.position = CGPoint(x: size.width * 0.5, y: y)
+
+        node.physicsBody = SKPhysicsBody(rectangleOf: boatSize)
+        node.physicsBody?.isDynamic = false
+        node.physicsBody?.categoryBitMask = Category.boat
+        node.physicsBody?.contactTestBitMask = Category.parachutist
+        node.physicsBody?.collisionBitMask = Category.none
+
+        return node
+    }
+
+    // MARK: - Spawning
+    private func spawnNextParachutist() {
+        guard isLevelActive else { return }
+
+        if landedCount >= targetCount {
+            // Победа
+            isLevelActive = false
+            ZZUser.shared.updateUserMoney(for: 10)
+            setResult(.win)
+            return
+        }
+
+        let spawnX = CGFloat.random(in: size.width * 0.2 ... size.width * 0.8)
+        let spawnY = size.height + 80
+
+        let p = ParachutistNode()
+        p.position = CGPoint(x: spawnX, y: spawnY)
+        p.zPosition = 3
+
+        // Physics
+        p.physicsBody = SKPhysicsBody(rectangleOf: p.size)
+        p.physicsBody?.allowsRotation = false
+        p.physicsBody?.linearDamping = 2.2
+        p.physicsBody?.friction = 0.0
+        p.physicsBody?.restitution = 0.0
+
+        p.physicsBody?.categoryBitMask = Category.parachutist
+        p.physicsBody?.contactTestBitMask = Category.boat | Category.water
+        p.physicsBody?.collisionBitMask = Category.none
+
+        addChild(p)
+        currentParachutist = p
+    }
+
+    // MARK: - Input (tap + swipe via touches)
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         guard isLevelActive, let touch = touches.first else { return }
         let loc = touch.location(in: self)
-        let nodesAtPoint = nodes(at: loc)
 
-        if let p = nodesAtPoint.compactMap({ $0 as? ParachutistNode }).first {
-            if p.state == .freefall {
-                p.openParachute()
-                emitHUD()
+        touchStartPoint = loc
+        touchStartTime = touch.timestamp
+
+        // ТАП: если тап по парашютисту — раскрываем парашют
+        if let p = currentParachutist, p.contains(loc) {
+            if !p.isChuteDeployed {
+                p.deployParachute()
+
+                physicsWorld.gravity = CGVector(dx: 0, dy: chuteGravity)
+
+                // мгновенно уменьшаем скорость падения в момент раскрытия
+                if let body = p.physicsBody {
+                    let limitedDy = max(body.velocity.dy, -maxDownSpeedChute)
+                    body.velocity = CGVector(dx: body.velocity.dx * 0.6, dy: limitedDy)
+                }
             }
         }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        guard isLevelActive, let touch = touches.first else { return }
+        let end = touch.location(in: self)
+
+        guard let start = touchStartPoint else { return }
+        let dx = end.x - start.x
+        let adx = abs(dx)
+
+        // СВАЙП: горизонтальный импульс
+        if adx >= swipeThreshold {
+            applyHorizontalImpulse(dx: dx)
+        }
+
+        touchStartPoint = nil
+        touchStartTime = nil
+    }
+
+    private func applyHorizontalImpulse(dx: CGFloat) {
+        guard let p = currentParachutist else { return }
+
+        // направление: -1 или +1
+        let dir: CGFloat = dx > 0 ? 1 : -1
+        let impulse = CGVector(dx: dir * swipeImpulse, dy: 0)
+
+        p.physicsBody?.applyImpulse(impulse)
     }
 
     // MARK: - Update loop
     override func update(_ currentTime: TimeInterval) {
         guard isLevelActive else { return }
 
-        // dt
-        if t == 0 { t = currentTime }
-        let dt = min(1.0/30.0, currentTime - t) // кап для стабильности
-        t = currentTime
+        moveBoat(dt: 1.0 / 60.0) // SpriteKit update не даёт dt напрямую — берём “приближённо”
+        applyWind()
+        clampParachutistInsideScreen()
+        limitParachutistVerticalSpeed()
+        applyFixedVerticalSpeed()
 
-        // ветер (синус)
-        let windAx = sin(CGFloat(currentTime) * windFrequency) * windStrength
+    }
 
-        for p in parachutists where !p.hasLanded {
-            // Вертикальная скорость задаётся состоянием (без физики)
-            let vy: CGFloat = (p.state == .freefall) ? -freefallSpeed : -descentSpeed
+    private func limitParachutistVerticalSpeed() {
+        guard let p = currentParachutist, let body = p.physicsBody else { return }
 
-            // горизонтальное: vx + ветер
-            p.vx += windAx * CGFloat(dt)
-            p.vx = clamp(p.vx, -maxHorizontalSpeed, maxHorizontalSpeed)
+        let maxDown = p.isChuteDeployed ? maxDownSpeedChute : maxDownSpeedFree
+        if body.velocity.dy < -maxDown {
+            body.velocity = CGVector(dx: body.velocity.dx, dy: -maxDown)
+        }
+    }
+    
+    private func moveBoat(dt: CGFloat) {
+        // Двигаем лодку между левым и правым краем
+        let halfW = boat.size.width / 2
+        let minX = halfW + 12
+        let maxX = size.width - halfW - 12
 
-            // трение по vx
-            let damping = max(0, 1 - horizontalDampingPerSecond * CGFloat(dt))
-            p.vx *= damping
+        boat.position.x += boatDirection * boatSpeed * dt
 
-            // движение
-            p.position.x += p.vx * CGFloat(dt)
-            p.position.y += vy * CGFloat(dt)
-
-            // ограничим по краям экрана
-            let halfW = p.size.width * 0.5
-            p.position.x = clamp(p.position.x, halfW, size.width - halfW)
-
-            // проверки столкновений с лодкой/водой
-            checkLandingOrFail(for: p)
+        if boat.position.x <= minX {
+            boat.position.x = minX
+            boatDirection = 1
+        } else if boat.position.x >= maxX {
+            boat.position.x = maxX
+            boatDirection = -1
         }
     }
 
-    // MARK: - World setup
-    private func setupStaticWorld() {
-        // вода
-        waterNode = SKShapeNode(rect: .zero, cornerRadius: 0)
-        waterNode.fillColor = SKColor(red: 0.15, green: 0.45, blue: 0.85, alpha: 1.0)
-        waterNode.strokeColor = .clear
-        addChild(waterNode)
-
-        // лодка (просто прямоугольник)
-        boatNode = SKShapeNode(rectOf: boatSize, cornerRadius: 10)
-        boatNode.fillColor = SKColor(red: 0.55, green: 0.30, blue: 0.10, alpha: 1.0)
-        boatNode.strokeColor = .clear
-        addChild(boatNode)
-
-        layoutStaticWorld()
+    private func applyWind() {
+        // лёгкий дрейф только когда парашют раскрыт
+        guard let p = currentParachutist, p.isChuteDeployed else { return }
+        p.physicsBody?.applyForce(CGVector(dx: windStrength, dy: 0))
     }
 
-    private func layoutStaticWorld() {
-        // вода снизу
-        waterNode.path = CGPath(rect: CGRect(x: 0, y: 0, width: size.width, height: waterHeight), transform: nil)
-        waterNode.position = .zero
-
-        // лодка по центру, чуть выше воды
-        boatNode.position = CGPoint(x: size.width * 0.5, y: waterHeight + 40)
+    private func clampParachutistInsideScreen() {
+        guard let p = currentParachutist else { return }
+        let halfW = p.size.width / 2
+        let minX = halfW + 4
+        let maxX = size.width - halfW - 4
+        if p.position.x < minX { p.position.x = minX }
+        if p.position.x > maxX { p.position.x = maxX }
     }
 
-    // MARK: - Level logic
-    private func resetLevel() {
+    // MARK: - Contacts
+    func didBegin(_ contact: SKPhysicsContact) {
+        guard isLevelActive else { return }
+
+        let a = contact.bodyA.categoryBitMask
+        let b = contact.bodyB.categoryBitMask
+
+        let isParachutist = (a == Category.parachutist) || (b == Category.parachutist)
+        guard isParachutist else { return }
+
+        if (a == Category.water) || (b == Category.water) {
+            onHitWater(at: contact.contactPoint)
+        } else if (a == Category.boat) || (b == Category.boat) {
+            onLandBoat()
+        }
+    }
+
+    private func onHitWater(at point: CGPoint) {
+        // Мгновенное поражение
         isLevelActive = false
-        landedCount = 0
-        totalParachutists = 0
+        setResult(.lose)
 
-        for p in parachutists { p.removeFromParent() }
-        parachutists.removeAll()
+        if let p = currentParachutist {
+            p.physicsBody?.categoryBitMask = Category.none
+            p.physicsBody?.contactTestBitMask = Category.none
+            p.physicsBody?.collisionBitMask = Category.none
+            p.removeFromParent()
+            currentParachutist = nil
+        }
+        
+        let s: SKSpriteNode
+        if let _ = UIImage(named: "shark") {
+            s = SKSpriteNode(imageNamed: "shark")
+            s.size = CGSize(width: 215, height: 165)
+        } else {
+            s = SKSpriteNode(color: .gray, size: CGSize(width: 90, height: 60))
+        }
+        s.position = CGPoint(x: point.x, y: max(point.y, 40))
+        s.zPosition = 4
+        addChild(s)
+        shark = s
     }
 
-    private func spawnLevel() {
-        // 2...12, можно слегка усложнять по уровню
-        totalParachutists = clampInt(2 + (levelIndex / 2), 2, 12)
+    private func onLandBoat() {
+        guard let p = currentParachutist else { return }
 
-        for i in 0..<totalParachutists {
-            let p = ParachutistNode(
-                freefallTextureName: "parachutist_freefall",
-                parachuteTextureName: "parachutist_parachute"
-            )
+        // Считаем приземление только если парашют раскрыт (по желанию)
+        // Если хочешь засчитывать и без парашюта — убери эту проверку.
+        guard p.isChuteDeployed else { return }
 
-            // старт сверху, разброс по X
-            let x = CGFloat.random(in: 40...(size.width - 40))
-            let y = size.height + CGFloat(40 + i * 12)
-
-            p.position = CGPoint(x: x, y: y)
-            p.zPosition = 10
-            addChild(p)
-            parachutists.append(p)
-        }
-    }
-
-    private func checkLandingOrFail(for p: ParachutistNode) {
-        // 1) вода: если нижняя часть спрайта коснулась водной зоны -> поражение
-        let bottomY = p.position.y - p.size.height * 0.5
-        if bottomY <= waterHeight {
-            loseLevel()
-            return
-        }
-
-        // 2) лодка: засчитываем посадку, если спустился до высоты лодки и по X внутри лодки
-        // (простая логика без физики)
-        let boatTopY = boatNode.position.y + boatSize.height * 0.5
-        if bottomY <= boatTopY + 6 { // небольшой допуск
-            let dx = abs(p.position.x - boatNode.position.x)
-            if dx <= boatSize.width * 0.5 - 10 {
-                land(p)
-                return
-            }
-        }
-    }
-
-    private func land(_ p: ParachutistNode) {
-        guard !p.hasLanded else { return }
-        p.hasLanded = true
         landedCount += 1
 
-        // поставить на лодку аккуратно и "заморозить"
-        p.vx = 0
-        let y = boatNode.position.y + boatSize.height * 0.5 + p.size.height * 0.5 - 6
-        p.position.y = y
+        // убрать текущего, вернуть гравитацию на free fall для следующего
+        p.removeFromParent()
+        currentParachutist = nil
+        physicsWorld.gravity = CGVector(dx: 0, dy: freeFallGravity)
 
-        emitHUD()
-
-        if landedCount >= totalParachutists {
-            winLevel()
-        }
-    }
-
-    private func winLevel() {
-        isLevelActive = false
-        onEvent?(.win)
-    }
-
-    private func loseLevel() {
-        isLevelActive = false
-
-        // (опционально) "акула" — просто всплеск/текст, без анимации
-        onEvent?(.lose)
-    }
-
-    private func emitHUD() {
-        let opened = parachutists.filter { $0.state == .parachute }.count
-        onEvent?(.hud("Level \(levelIndex) • Landed \(landedCount)/\(totalParachutists) • Opened \(opened)"))
-    }
-
-    // MARK: - Helpers
-    private func clamp(_ v: CGFloat, _ a: CGFloat, _ b: CGFloat) -> CGFloat {
-        min(max(v, a), b)
-    }
-
-    private func clampInt(_ v: Int, _ a: Int, _ b: Int) -> Int {
-        min(max(v, a), b)
+        // следующий
+        run(.sequence([
+            .wait(forDuration: 0.25),
+            .run { [weak self] in self?.spawnNextParachutist() }
+        ]))
     }
 }

@@ -8,9 +8,12 @@ import SwiftUI
 
 @main
 struct Pach_GamingApp: App {
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-        }
-    }
-}
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+       
+       var body: some Scene {
+           WindowGroup {
+               ASGRoot()
+                   .preferredColorScheme(.light)
+           }
+       }
+   }
