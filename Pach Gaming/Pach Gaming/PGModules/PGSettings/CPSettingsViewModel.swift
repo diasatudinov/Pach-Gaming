@@ -1,3 +1,10 @@
+//
+//  CPSettingsViewModel.swift
+//  Pach Gaming
+//
+//
+
+
 
 import SwiftUI
 
