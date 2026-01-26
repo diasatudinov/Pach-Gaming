@@ -8,77 +8,103 @@ import SwiftUI
 
 struct PGMenuView: View {
     @State private var showGame = false
-        @State private var showAchievement = false
-        @State private var showSettings = false
-        @State private var showCalendar = false
-        @State private var showDailyReward = false
-        @State private var showShop = false
+    @State private var showAchievement = false
+    @State private var showSettings = false
+    @State private var showCalendar = false
+    @State private var showDailyReward = false
+    @State private var showShop = false
+    
+    @StateObject private var shopVM = CPShopViewModel()
+    var body: some View {
+        
+        ZStack {
             
-//        @StateObject private var settingsVM = CPSettingsViewModel()
-        var body: some View {
-            
-            ZStack {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 10) {
+                    ZZCoinBg()
+                        .frame(maxHeight: .infinity, alignment: .top)
                     
-                    VStack(spacing: 124) {
-                        
-                        
-                        Image("menuLogoPD")
+                    Button {
+                        showShop = true
+                    } label: {
+                        Image("shopIconZZ")
                             .resizable()
                             .scaledToFit()
-                            .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 140:190)
-                        
-                        
-                        VStack(spacing: 32) {
-                            
-                            Button {
-                                showGame = true
-                            } label: {
-                                Image(".playIconPD")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 100:70)
-                            }
-                            
-                            Button {
-                                showSettings = true
-                            } label: {
-                                Image(".settingsconPD")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 100:70)
-                            }
-                                                
-                            Button {
-                                showAchievement = true
-                            } label: {
-                                Image(".achievementsconPD")
-                                    .resizable()
-                                    .scaledToFit()
-                                    .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 100:70)
-                            }
-                        }
-                        
+                            .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 100:77)
                     }
-        
+                }
                 
-            }.frame(maxWidth: .infinity)
-                .background(
-                    ZStack {
-                        Image(".appBgPD")
+                VStack(spacing: 10) {
+                    
+                    
+                }
+                .frame(maxWidth: .infinity)
+                
+                VStack(spacing: 10) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Image("settingsIconZZ")
                             .resizable()
-                            .edgesIgnoringSafeArea(.all)
-                            .scaledToFill()
+                            .scaledToFit()
+                            .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 100:82)
                     }
-                )
-                .fullScreenCover(isPresented: $showGame) {
-//                    BeetleColorPuzzleView()
+                    .frame(maxHeight: .infinity, alignment: .top)
+                    
+                    Button {
+                        showAchievement = true
+                    } label: {
+                        Image("achivementsIconZZ")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 100:87)
+                    }
                 }
-                .fullScreenCover(isPresented: $showAchievement) {
-//                    PDAchievementsView()
-                }
+                
+            }
+            .padding(5)
             
-        }
+            VStack(spacing: 10) {
+                Image("menuLogoZZ")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 140:170)
+                
+                Button {
+                    showGame = true
+                } label: {
+                    Image("playIconZZ")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: ZZDeviceManager.shared.deviceType == .pad ? 100:150)
+                }
+                
+            }
+            
+        }.frame(maxWidth: .infinity)
+            .background(
+                ZStack {
+                    Image(.appBgZZ)
+                        .resizable()
+                        .edgesIgnoringSafeArea(.all)
+                        .scaledToFill()
+                }
+            )
+            .fullScreenCover(isPresented: $showGame) {
+                GameView(viewModel: shopVM)
+            }
+            .fullScreenCover(isPresented: $showShop) {
+                PGShopView(viewModel: shopVM)
+            }
+            .fullScreenCover(isPresented: $showSettings) {
+                PGSettingsView()
+            }
+            .fullScreenCover(isPresented: $showAchievement) {
+                PGAchivementsView()
+            }
+        
     }
+}
 
 #Preview {
     PGMenuView()

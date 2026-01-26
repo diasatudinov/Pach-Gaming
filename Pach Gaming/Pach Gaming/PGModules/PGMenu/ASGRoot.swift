@@ -24,8 +24,8 @@ struct ASGRoot: View {
                     } else {
                         PGMenuView()
                             .onAppear {
-                                AppDelegate.orientationLock = .portrait
-                                setOrientation(.portrait)
+                                AppDelegate.orientationLock = .landscape
+                                setOrientation(.landscapeLeft)
                             }
                             .onDisappear {
                                 AppDelegate.orientationLock = .all

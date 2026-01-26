@@ -13,7 +13,7 @@ struct PGLoaderView: View {
        var body: some View {
            ZStack {
                ZStack {
-                   Image(".loaderViewLogoPD")
+                   Image(.loaderViewLogoZZ)
                        .resizable()
                        .ignoresSafeArea()
                        .scaledToFill()
@@ -24,7 +24,7 @@ struct PGLoaderView: View {
                
                VStack(spacing: 0) {
                    
-                   Image(".loaderViewLogoPD")
+                   Image(.loaderViewLogoZZ)
                        .resizable()
                        .scaledToFit()
                        .frame(height: 200)
